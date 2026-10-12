@@ -1,0 +1,78 @@
+name: Compilar APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar o projeto (aceita projeto.zip OU pastas soltas)
+        run: |
+          if [ -f projeto.zip ]; then
+            echo "Achei projeto.zip, descompactando..."
+            rm -rf proj
+            mkdir proj
+            unzip -q projeto.zip -d proj
+            echo "DIR=proj" >> "$GITHUB_ENV"
+          elif [ -f settings.gradle.kts ]; then
+            echo "Achei o projeto nas pastas soltas."
+            echo "DIR=." >> "$GITHUB_ENV"
+          else
+            echo "ERRO: não achei projeto.zip nem settings.gradle.kts na raiz do repositório."
+            exit 1
+          fi
+
+      - name: Baixar o modelo de IA e embutir no APK
+        run: |
+          mkdir -p "$DIR/app/src/main/assets"
+          curl -L --fail --retry 5 --retry-delay 15 --retry-all-errors \
+            -o "$DIR/app/src/main/assets/modelo.task" \
+            "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.task"
+          ls -lh "$DIR/app/src/main/assets/modelo.task"
+          TAM=$(stat -c%s "$DIR/app/src/main/assets/modelo.task")
+          if [ "$TAM" -lt 1000000000 ]; then
+            echo "ERRO: o modelo veio incompleto ($TAM bytes)."
+            exit 1
+          fi
+          if [ "$(head -c 2 "$DIR/app/src/main/assets/modelo.task")" != "PK" ]; then
+            echo "ERRO: o arquivo baixado não é um .task válido."
+            exit 1
+          fi
+
+      - name: Instalar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Instalar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      - name: Compilar o APK
+        run: gradle -p "$DIR" assembleDebug --stacktrace
+
+      - name: Guardar o APK (aba Actions > Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hamk-apk
+          compression-level: 0
+          path: ${{ env.DIR }}/app/build/outputs/apk/debug/*.apk
+
+      - name: Publicar o APK na aba Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: Hamk - APK ${{ github.run_number }}
+          body: APK com a IA (Qwen 2.5 1.5B) já dentro. Baixe o app-debug.apk, instale e abra. Não precisa escolher nenhum arquivo. Precisa de uns 4 GB livres no celular.
+          files: ${{ env.DIR }}/app/build/outputs/apk/debug/*.apk
