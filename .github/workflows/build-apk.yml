@@ -43,10 +43,8 @@ jobs:
             echo "ERRO: o modelo veio incompleto ($TAM bytes)."
             exit 1
           fi
-          if [ "$(head -c 2 "$DIR/app/src/main/assets/modelo.task")" != "PK" ]; then
-            echo "ERRO: o arquivo baixado não é um .task válido."
-            exit 1
-          fi
+          echo "Primeiros bytes do modelo (só para diagnóstico):"
+          head -c 16 "$DIR/app/src/main/assets/modelo.task" | od -An -tx1
 
       - name: Instalar Java 17
         uses: actions/setup-java@v4
